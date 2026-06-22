@@ -1,0 +1,23 @@
+image:
+  repository: dkrinitsyn/llm-broker
+  pullPolicy: Always
+  tag: "placeholder"
+
+ollama:
+  image: ollama/ollama:latest
+  port: 11434
+  hostModelPath: /var/lib/ollama
+
+nodeSelectorValues:
+  - ksai
+  - kmai
+
+brokerPort: 8000
+
+env:
+  RABBITMQ_URL: "amqp://guest:guest@rabbitmq.rabbitmq.svc.cluster.local/"
+  REQUEST_QUEUE: "llm_requests"
+  OLLAMA_URL: "http://localhost:11434"
+  OLLAMA_MODEL: "qwen3:4b-instruct"
+
+namespace: llm-unit

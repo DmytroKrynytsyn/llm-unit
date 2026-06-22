@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: llm-unit
+  namespace: {{ .Values.namespace }}
+spec:
+  selector:
+    matchLabels:
+      app: llm-unit
+  template:
+    metadata:
+      labels:
+        app: llm-unit
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "{{ .Values.brokerPort }}"
+    spec:
+      terminationGracePeriodSeconds: 0
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: purpose
+                    operator: In
+                    values:
+                      {{- toYaml .Values.nodeSelectorValues | nindent 22 }}
+      containers:
+        - name: ollama
+          image: "{{ .Values.ollama.image }}"
+          ports:
+            - containerPort: {{ .Values.ollama.port }}
+          volumeMounts:
+            - name: ollama-models
+              mountPath: /root/.ollama
+          readinessProbe:
+            httpGet:
+              path: /
+              port: {{ .Values.ollama.port }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: {{ .Values.ollama.port }}
+            initialDelaySeconds: 10
+            periodSeconds: 20
+        - name: llm-broker
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.brokerPort }}
+          env:
+            {{- range $key, $val := .Values.env }}
+            - name: {{ $key }}
+              value: {{ $val | quote }}
+            {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.brokerPort }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.brokerPort }}
+            initialDelaySeconds: 10
+            periodSeconds: 20
+      volumes:
+        - name: ollama-models
+          hostPath:
+            path: {{ .Values.ollama.hostModelPath }}
+            type: DirectoryOrCreate

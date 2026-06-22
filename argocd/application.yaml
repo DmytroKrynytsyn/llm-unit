@@ -1,0 +1,23 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: llm-unit
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/DmytroKrynytsyn/llm-unit
+    targetRevision: HEAD
+    path: helm/llm-unit
+    helm:
+      valueFiles:
+        - values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: llm-unit
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
