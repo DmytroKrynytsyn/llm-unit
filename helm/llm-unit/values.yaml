@@ -1,7 +1,7 @@
 image:
   repository: dkrinitsyn/llm-broker
   pullPolicy: Always
-  tag: "placeholder"
+  tag: "20260622183343"
 
 ollama:
   image: ollama/ollama:latest
