@@ -21,7 +21,7 @@ Any extra fields in the request body besides `prompt` are echoed back unchanged,
 
 ## Model handling
 
-`OLLAMA_MODEL` (default `qwen3:4b-instruct`) is a fixed Helm value, not auto-detected — nothing outside this chart pulls a model anymore. On startup the broker calls `POST /api/pull` for that model before registering the RabbitMQ consumer (idempotent — instant no-op if already pulled, same as the old Ansible task it replaces). FastAPI's startup event blocks request handling until this finishes, so `/health` won't go green mid-pull.
+`OLLAMA_MODEL` (default `qwen3:4b-instruct`) is a fixed Helm value, not auto-detected — nothing outside this chart pulls a model anymore. On startup the broker lists whatever's cached via `/api/tags`, deletes any model that isn't `OLLAMA_MODEL`, then `POST /api/pull`s the configured one — in that order, so disk is freed *before* the new model downloads (these nodes have as little as 13GB of storage; never assume room for two models at once). This means changing `OLLAMA_MODEL` in `values.yaml` and rolling the DaemonSet is enough to switch models cleanly, no manual cleanup. FastAPI's startup event blocks request handling until this finishes, so `/health` won't go green mid-pull.
 
 ## Scheduling and resources
 

@@ -34,9 +34,16 @@ def log(event: str, **kwargs):
     print(json.dumps({"event": event, **kwargs}, ensure_ascii=False), flush=True)
 
 
-async def ensure_model_pulled():
-    log("model_pull_start", model=OLLAMA_MODEL)
+async def sync_model_on_disk():
     async with httpx.AsyncClient(timeout=None) as client:
+        tags = await client.get(f"{OLLAMA_URL}/api/tags")
+        tags.raise_for_status()
+        for m in tags.json().get("models", []):
+            if m["name"] != OLLAMA_MODEL:
+                log("model_delete", model=m["name"])
+                await client.delete(f"{OLLAMA_URL}/api/delete", json={"model": m["name"]})
+
+        log("model_pull_start", model=OLLAMA_MODEL)
         r = await client.post(f"{OLLAMA_URL}/api/pull", json={"model": OLLAMA_MODEL, "stream": False})
         r.raise_for_status()
     log("model_pull_done", model=OLLAMA_MODEL)
@@ -105,7 +112,7 @@ def health():
 async def startup():
     global rabbitmq_connection
 
-    await ensure_model_pulled()
+    await sync_model_on_disk()
 
     rabbitmq_connection = await aio_pika.connect_robust(RABBITMQ_URL)
     rabbitmq_connection.reconnect_callbacks.add(lambda *_: asyncio.create_task(setup_consumer()))
