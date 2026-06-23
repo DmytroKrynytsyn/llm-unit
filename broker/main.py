@@ -2,6 +2,7 @@ import os
 import json
 import time
 import asyncio
+import subprocess
 
 import httpx
 import aio_pika
@@ -25,38 +26,50 @@ llm_request_errors = Counter(
 )
 
 RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq.rabbitmq.svc.cluster.local/")
-OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:4b-instruct")
 REQUEST_QUEUE = os.getenv("REQUEST_QUEUE", "llm_requests")
+LLAMA_BIN_DIR = os.getenv("LLAMA_BIN_DIR", "/opt/llama-bin")
+LLAMA_MODEL_PATH = os.getenv("LLAMA_MODEL_PATH", "/models/model.gguf")
+LLAMA_PORT = os.getenv("LLAMA_PORT", "8080")
+LLAMA_URL = f"http://127.0.0.1:{LLAMA_PORT}"
+MODEL_NAME = os.path.basename(LLAMA_MODEL_PATH)
 
 
 def log(event: str, **kwargs):
     print(json.dumps({"event": event, **kwargs}, ensure_ascii=False), flush=True)
 
 
-async def sync_model_on_disk():
-    async with httpx.AsyncClient(timeout=None) as client:
-        tags = await client.get(f"{OLLAMA_URL}/api/tags")
-        tags.raise_for_status()
-        for m in tags.json().get("models", []):
-            if m["name"] != OLLAMA_MODEL:
-                log("model_delete", model=m["name"])
-                await client.delete(f"{OLLAMA_URL}/api/delete", json={"model": m["name"]})
+llama_server_process: subprocess.Popen = None
 
-        log("model_pull_start", model=OLLAMA_MODEL)
-        r = await client.post(f"{OLLAMA_URL}/api/pull", json={"model": OLLAMA_MODEL, "stream": False})
-        r.raise_for_status()
-    log("model_pull_done", model=OLLAMA_MODEL)
+
+def start_llama_server():
+    global llama_server_process
+    llama_server_process = subprocess.Popen([
+        f"{LLAMA_BIN_DIR}/llama-server",
+        "-m", LLAMA_MODEL_PATH,
+        "--host", "127.0.0.1",
+        "--port", LLAMA_PORT,
+    ])
+    log("llama_server_started", pid=llama_server_process.pid, model=MODEL_NAME)
+
+
+async def wait_for_llama_server():
+    async with httpx.AsyncClient() as client:
+        while True:
+            try:
+                r = await client.get(f"{LLAMA_URL}/health")
+                if r.status_code == 200:
+                    break
+            except httpx.HTTPError:
+                pass
+            await asyncio.sleep(1)
+    log("llama_server_ready")
 
 
 async def run_inference(prompt: str) -> str:
     async with httpx.AsyncClient(timeout=None) as client:
-        r = await client.post(
-            f"{OLLAMA_URL}/api/generate",
-            json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": False},
-        )
+        r = await client.post(f"{LLAMA_URL}/completion", json={"prompt": prompt})
         r.raise_for_status()
-        return r.json()["response"]
+        return r.json()["content"]
 
 
 async def on_request(message: aio_pika.IncomingMessage) -> None:
@@ -68,13 +81,13 @@ async def on_request(message: aio_pika.IncomingMessage) -> None:
         try:
             result = await run_inference(prompt)
             duration = time.monotonic() - start
-            llm_request_duration.labels(model=OLLAMA_MODEL).observe(duration)
-            reply = {**body, "result": result, "error": None, "model_used": OLLAMA_MODEL, "duration_seconds": duration}
+            llm_request_duration.labels(model=MODEL_NAME).observe(duration)
+            reply = {**body, "result": result, "error": None, "model_used": MODEL_NAME, "duration_seconds": duration}
             log("inference_done", request_id=body.get("request_id"), duration_seconds=duration)
         except Exception as e:
             duration = time.monotonic() - start
-            llm_request_errors.labels(model=OLLAMA_MODEL).inc()
-            reply = {**body, "result": None, "error": str(e), "model_used": OLLAMA_MODEL, "duration_seconds": duration}
+            llm_request_errors.labels(model=MODEL_NAME).inc()
+            reply = {**body, "result": None, "error": str(e), "model_used": MODEL_NAME, "duration_seconds": duration}
             log("inference_error", request_id=body.get("request_id"), error=str(e))
 
         if not message.reply_to:
@@ -105,18 +118,19 @@ async def setup_consumer():
 
 @app.get("/health")
 def health():
-    return {"healthy": True}
+    return {"healthy": llama_server_process is not None and llama_server_process.poll() is None}
 
 
 @app.on_event("startup")
 async def startup():
     global rabbitmq_connection
 
-    await sync_model_on_disk()
+    start_llama_server()
+    await wait_for_llama_server()
 
     rabbitmq_connection = await aio_pika.connect_robust(RABBITMQ_URL)
     rabbitmq_connection.reconnect_callbacks.add(lambda *_: asyncio.create_task(setup_consumer()))
 
     await setup_consumer()
 
-    log("startup", rabbitmq_url=RABBITMQ_URL, ollama_url=OLLAMA_URL, model=OLLAMA_MODEL, queue=REQUEST_QUEUE)
+    log("startup", rabbitmq_url=RABBITMQ_URL, llama_url=LLAMA_URL, model=MODEL_NAME, queue=REQUEST_QUEUE)

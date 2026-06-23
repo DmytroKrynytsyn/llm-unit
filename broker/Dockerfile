@@ -8,7 +8,7 @@ COPY broker/main.py ./broker/
 RUN uv build --wheel --out-dir /dist
 
 
-FROM python:3.12-alpine AS runtime
+FROM python:3.12-slim-bookworm AS runtime
 
 WORKDIR /app
 

@@ -3,10 +3,9 @@ image:
   pullPolicy: Always
   tag: "20260622194818"
 
-ollama:
-  image: ollama/ollama:latest
-  port: 11434
-  hostModelPath: /var/lib/ollama
+llamacpp:
+  binDir: /opt/ollama-build/latest
+  modelHostPath: /var/lib/llama-models/model.gguf
 
 nodeSelectorValues:
   - ksai
@@ -17,7 +16,8 @@ brokerPort: 8000
 env:
   RABBITMQ_URL: "amqp://guest:guest@rabbitmq.rabbitmq.svc.cluster.local/"
   REQUEST_QUEUE: "llm_requests"
-  OLLAMA_URL: "http://localhost:11434"
-  OLLAMA_MODEL: "qwen3:1.7b"
+  LLAMA_BIN_DIR: "/opt/llama-bin"
+  LLAMA_MODEL_PATH: "/models/model.gguf"
+  LLAMA_PORT: "8080"
 
 namespace:  

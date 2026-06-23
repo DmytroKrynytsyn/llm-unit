@@ -1,16 +1,16 @@
 # llm-unit
 
-DaemonSet on k3s, one pod per dedicated inference node (`purpose=ksai`/`purpose=kmai`, see [homelab](https://github.com/DmytroKrynytsyn/homelab)). Each pod runs its own Ollama plus a small broker that drains a RabbitMQ request queue, runs inference, and replies — decoupling request rate from inference throughput.
+DaemonSet on k3s, one pod per dedicated inference node (`purpose=ksai`/`purpose=kmai`, see [homelab](https://github.com/DmytroKrynytsyn/homelab)). Each pod is a single tiny container: a Python broker that drains a RabbitMQ request queue, runs inference via a `llama-server` (llama.cpp) subprocess, and replies — decoupling request rate from inference throughput.
 
 git push -> Github Action -> Docker Hub -> ArgoCD -> k3s
 
 ## How it works
 
-The broker consumes `llm_requests`, calls the in-pod Ollama over `localhost:11434`, and publishes the result to the `reply_to` queue named in the request message, with the same `correlation_id`. On startup the broker pulls the configured model (default `qwen3:4b-instruct`) if it isn't already cached on that node — a no-op after the first run. One request at a time per node — Ollama serves sequentially.
+The `llama-server` binary and the GGUF model file are not built or downloaded by this repo — they're `hostPath` mounts onto files placed on the node ahead of time (binaries are built weekly on the host by `homelab`'s `node-ollama-build` role; the model file is placed manually). On startup the broker launches `llama-server` as a subprocess bound to `127.0.0.1`, waits for it to report healthy, then consumes `llm_requests`, calls `llama-server`'s native `/completion` endpoint, and publishes the result to the `reply_to` queue named in the request message, with the same `correlation_id`. One request at a time per node — `llama-server` serves sequentially.
 
 ## Stack
 
-`k3s` · `ArgoCD` · `Helm` · `GitHub Actions` · `Docker Hub` · `FastAPI` · `uv` · `Ollama` · `RabbitMQ`
+`k3s` · `ArgoCD` · `Helm` · `GitHub Actions` · `Docker Hub` · `FastAPI` · `uv` · `llama.cpp` · `RabbitMQ`
 
 ## Bootstrap
 

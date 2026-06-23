@@ -26,25 +26,6 @@ spec:
                     values:
                       {{- toYaml .Values.nodeSelectorValues | nindent 22 }}
       containers:
-        - name: ollama
-          image: "{{ .Values.ollama.image }}"
-          ports:
-            - containerPort: {{ .Values.ollama.port }}
-          volumeMounts:
-            - name: ollama-models
-              mountPath: /root/.ollama
-          readinessProbe:
-            httpGet:
-              path: /
-              port: {{ .Values.ollama.port }}
-            initialDelaySeconds: 5
-            periodSeconds: 10
-          livenessProbe:
-            httpGet:
-              path: /
-              port: {{ .Values.ollama.port }}
-            initialDelaySeconds: 10
-            periodSeconds: 20
         - name: llm-broker
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
@@ -55,6 +36,13 @@ spec:
             - name: {{ $key }}
               value: {{ $val | quote }}
             {{- end }}
+          volumeMounts:
+            - name: llama-bin
+              mountPath: /opt/llama-bin
+              readOnly: true
+            - name: llama-model
+              mountPath: /models/model.gguf
+              readOnly: true
           readinessProbe:
             httpGet:
               path: /health
@@ -68,7 +56,11 @@ spec:
             initialDelaySeconds: 10
             periodSeconds: 20
       volumes:
-        - name: ollama-models
+        - name: llama-bin
           hostPath:
-            path: {{ .Values.ollama.hostModelPath }}
-            type: DirectoryOrCreate
+            path: {{ .Values.llamacpp.binDir }}
+            type: Directory
+        - name: llama-model
+          hostPath:
+            path: {{ .Values.llamacpp.modelHostPath }}
+            type: File
