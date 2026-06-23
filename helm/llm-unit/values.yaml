@@ -5,7 +5,7 @@ image:
 
 llamacpp:
   binDir: /opt/ollama-build/latest
-  modelHostPath: /var/lib/llama-models/model.gguf
+  modelDir: /var/lib/llama-models
 
 nodeSelectorValues:
   - ksai
@@ -17,7 +17,7 @@ env:
   RABBITMQ_URL: "amqp://guest:guest@rabbitmq.rabbitmq.svc.cluster.local/"
   REQUEST_QUEUE: "llm_requests"
   LLAMA_BIN_DIR: "/opt/llama-bin"
-  LLAMA_MODEL_PATH: "/models/model.gguf"
+  LLAMA_MODEL_DIR: "/models"
   LLAMA_PORT: "8080"
 
 namespace:  

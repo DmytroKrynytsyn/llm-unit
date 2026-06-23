@@ -1,6 +1,7 @@
 import os
 import json
 import time
+import glob
 import asyncio
 import subprocess
 
@@ -28,10 +29,10 @@ llm_request_errors = Counter(
 RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq.rabbitmq.svc.cluster.local/")
 REQUEST_QUEUE = os.getenv("REQUEST_QUEUE", "llm_requests")
 LLAMA_BIN_DIR = os.getenv("LLAMA_BIN_DIR", "/opt/llama-bin")
-LLAMA_MODEL_PATH = os.getenv("LLAMA_MODEL_PATH", "/models/model.gguf")
+LLAMA_MODEL_DIR = os.getenv("LLAMA_MODEL_DIR", "/models")
 LLAMA_PORT = os.getenv("LLAMA_PORT", "8080")
 LLAMA_URL = f"http://127.0.0.1:{LLAMA_PORT}"
-MODEL_NAME = os.path.basename(LLAMA_MODEL_PATH)
+MODEL_NAME = None
 
 
 def log(event: str, **kwargs):
@@ -42,10 +43,16 @@ llama_server_process: subprocess.Popen = None
 
 
 def start_llama_server():
-    global llama_server_process
+    global llama_server_process, MODEL_NAME
+    candidates = glob.glob(os.path.join(LLAMA_MODEL_DIR, "*.gguf"))
+    if not candidates:
+        raise RuntimeError(f"no .gguf files found in {LLAMA_MODEL_DIR}")
+    model_path = max(candidates, key=os.path.getmtime)
+    MODEL_NAME = os.path.basename(model_path)
+
     llama_server_process = subprocess.Popen([
         f"{LLAMA_BIN_DIR}/llama-server",
-        "-m", LLAMA_MODEL_PATH,
+        "-m", model_path,
         "--host", "127.0.0.1",
         "--port", LLAMA_PORT,
     ])
