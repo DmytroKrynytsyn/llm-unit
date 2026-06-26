@@ -27,7 +27,9 @@ llm_request_errors = Counter(
 )
 
 RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq.rabbitmq.svc.cluster.local/")
-REQUEST_QUEUE = os.getenv("REQUEST_QUEUE", "llm_requests")
+# Ordered by priority: REQUEST_QUEUES[0] is drained fully before any later queue is checked.
+REQUEST_QUEUES = [q.strip() for q in os.getenv("REQUEST_QUEUES", "llm_requests").split(",") if q.strip()]
+RESPONSE_QUEUE = os.getenv("RESPONSE_QUEUE", "llm_responses")
 LLAMA_BIN_DIR = os.getenv("LLAMA_BIN_DIR", "/opt/llama-bin")
 LLAMA_MODEL_DIR = os.getenv("LLAMA_MODEL_DIR", "/models")
 LLAMA_PORT = os.getenv("LLAMA_PORT", "8080")
@@ -97,30 +99,43 @@ async def on_request(message: aio_pika.IncomingMessage) -> None:
             reply = {**body, "result": None, "error": str(e), "model_used": MODEL_NAME, "duration_seconds": duration}
             log("inference_error", request_id=body.get("request_id"), error=str(e))
 
-        if not message.reply_to:
-            log("missing_reply_to", request_id=body.get("request_id"))
-            return
-
         await rabbitmq_channel.default_exchange.publish(
             aio_pika.Message(
                 body=json.dumps(reply).encode(),
                 correlation_id=message.correlation_id,
             ),
-            routing_key=message.reply_to,
+            routing_key=RESPONSE_QUEUE,
         )
 
 
 rabbitmq_connection: aio_pika.RobustConnection = None
 rabbitmq_channel: aio_pika.Channel = None
+consume_task: asyncio.Task = None
+
+
+async def consume_loop():
+    queues = [
+        await rabbitmq_channel.declare_queue(name, durable=True)
+        for name in REQUEST_QUEUES
+    ]
+    while True:
+        for queue in queues:
+            message = await queue.get(fail=False)
+            if message is not None:
+                await on_request(message)
+                break
+        else:
+            await asyncio.sleep(0.5)
 
 
 async def setup_consumer():
-    global rabbitmq_channel
+    global rabbitmq_channel, consume_task
     rabbitmq_channel = await rabbitmq_connection.channel()
-    await rabbitmq_channel.set_qos(prefetch_count=1)
-    queue = await rabbitmq_channel.declare_queue(REQUEST_QUEUE, durable=True)
-    await queue.consume(on_request)
-    log("consumer_registered", queue=REQUEST_QUEUE)
+    await rabbitmq_channel.declare_queue(RESPONSE_QUEUE, durable=True)
+    if consume_task is not None:
+        consume_task.cancel()
+    consume_task = asyncio.create_task(consume_loop())
+    log("consumer_registered", queues=REQUEST_QUEUES, response_queue=RESPONSE_QUEUE)
 
 
 @app.get("/health")
@@ -140,4 +155,4 @@ async def startup():
 
     await setup_consumer()
 
-    log("startup", rabbitmq_url=RABBITMQ_URL, llama_url=LLAMA_URL, model=MODEL_NAME, queue=REQUEST_QUEUE)
+    log("startup", rabbitmq_url=RABBITMQ_URL, llama_url=LLAMA_URL, model=MODEL_NAME, queues=REQUEST_QUEUES)

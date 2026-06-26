@@ -1,19 +1,25 @@
+{{- range $i, $pool := .Values.pools }}
+{{- if $i }}
+---
+{{- end }}
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
-  name: llm-unit
-  namespace: {{ .Values.namespace }}
+  name: llm-unit-{{ $pool.name }}
+  namespace: {{ $.Values.namespace }}
 spec:
   selector:
     matchLabels:
       app: llm-unit
+      pool: {{ $pool.name }}
   template:
     metadata:
       labels:
         app: llm-unit
+        pool: {{ $pool.name }}
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "{{ .Values.brokerPort }}"
+        prometheus.io/port: "{{ $.Values.brokerPort }}"
     spec:
       terminationGracePeriodSeconds: 0
       affinity:
@@ -24,15 +30,17 @@ spec:
                   - key: purpose
                     operator: In
                     values:
-                      {{- toYaml .Values.nodeSelectorValues | nindent 22 }}
+                      - {{ $pool.name }}
       containers:
         - name: llm-broker
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          image: "{{ $.Values.image.repository }}:{{ $.Values.image.tag }}"
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
           ports:
-            - containerPort: {{ .Values.brokerPort }}
+            - containerPort: {{ $.Values.brokerPort }}
           env:
-            {{- range $key, $val := .Values.env }}
+            - name: REQUEST_QUEUES
+              value: {{ join "," $pool.queues | quote }}
+            {{- range $key, $val := $.Values.env }}
             - name: {{ $key }}
               value: {{ $val | quote }}
             {{- end }}
@@ -46,21 +54,22 @@ spec:
           readinessProbe:
             httpGet:
               path: /health
-              port: {{ .Values.brokerPort }}
+              port: {{ $.Values.brokerPort }}
             initialDelaySeconds: 5
             periodSeconds: 10
           livenessProbe:
             httpGet:
               path: /health
-              port: {{ .Values.brokerPort }}
+              port: {{ $.Values.brokerPort }}
             initialDelaySeconds: 10
             periodSeconds: 20
       volumes:
         - name: llama-bin
           hostPath:
-            path: {{ .Values.llamacpp.binDir }}
+            path: {{ $.Values.llamacpp.binDir }}
             type: Directory
         - name: llama-model
           hostPath:
-            path: {{ .Values.llamacpp.modelDir }}
+            path: {{ $.Values.llamacpp.modelDir }}
             type: Directory
+{{- end }}

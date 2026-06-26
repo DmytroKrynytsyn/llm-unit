@@ -9,15 +9,15 @@ DaemonSet running on k3s. One pod per dedicated inference node (`purpose=ksai` o
 
 ## Message contract
 
-The broker consumes `REQUEST_QUEUE` (`llm_requests` by default). Request body:
+The broker consumes `REQUEST_QUEUES`, a comma-separated ordered list (per-pool in `values.yaml`, e.g. `llm_requests_sai,llm_requests_mai`). Priority is positional: the broker polls `REQUEST_QUEUES[0]` and only checks the next queue in the list once it's empty, so an earlier queue is always fully drained before a later one is touched. Processing is strictly sequential — one message at a time, no concurrent consumers — since `llama-server` itself only serves one request at a time anyway. Request body:
 ```json
 {"prompt": "...", "request_id": "...", "chat_id": 123}
 ```
-The AMQP message also carries `reply_to` and `correlation_id` (set by the publisher, e.g. `telegram-bot-on-llm`). The broker runs the prompt through `llama-server`'s native `/completion` endpoint, then publishes to `reply_to` with the same `correlation_id`:
+The broker runs the prompt through `llama-server`'s native `/completion` endpoint, then publishes to the single shared `RESPONSE_QUEUE` (`llm_responses`) with the same `correlation_id`, regardless of which request queue it came from or any `reply_to` the publisher set:
 ```json
 {"result": "...", "error": null, "request_id": "...", "chat_id": 123, "model_used": "model.gguf", "duration_seconds": 12.3}
 ```
-Any extra fields in the request body besides `prompt` are echoed back unchanged, so other consumers can ride along without the broker knowing about their schema. The message is always acked, even on inference failure (the error goes into the reply body, not a requeue) — don't change this without checking who else publishes to this queue.
+Any extra fields in the request body besides `prompt` are echoed back unchanged, so other consumers can ride along without the broker knowing about their schema. The message is always acked, even on inference failure (the error goes into the reply body, not a requeue) — don't change this without checking who else publishes to these queues or consumes `llm_responses`.
 
 ## Model handling
 
@@ -25,7 +25,7 @@ There's no in-cluster pull or download. `LLAMA_MODEL_DIR` (mapped from `Values.l
 
 ## Scheduling and resources
 
-- Node targeting uses `affinity.nodeAffinity` with an `In` match over `Values.nodeSelectorValues`, not a plain `nodeSelector` — there are two label values (`ksai`, `kmai`) to match and `nodeSelector` only does equality.
+- One DaemonSet per pool, rendered by ranging over `Values.pools` (each entry: `name` — the `purpose` label value — and `queues` — its ordered `REQUEST_QUEUES` list). Adding a pool or changing a pool's queue list is a `values.yaml`-only change.
 - No `resources` block on the container by design: each node is dedicated entirely to this DaemonSet, so don't add CPU/memory limits.
 - Both `hostPath` mounts (`llamacpp.binDir`, `llamacpp.modelHostPath`) are read-only — the broker never writes to them, it only execs the binary and reads the model file.
 
