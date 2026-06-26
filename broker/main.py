@@ -3,6 +3,7 @@ import json
 import time
 import glob
 import asyncio
+import logging
 import subprocess
 
 import httpx
@@ -10,6 +11,15 @@ import aio_pika
 from fastapi import FastAPI
 from prometheus_fastapi_instrumentator import Instrumentator
 from prometheus_client import Histogram, Counter
+
+
+class FilterHealthMetrics:
+    def filter(self, record) -> bool:
+        msg = record.getMessage()
+        return "/health" not in msg and "/metrics" not in msg
+
+
+logging.getLogger("uvicorn.access").addFilter(FilterHealthMetrics())
 
 app = FastAPI()
 Instrumentator().instrument(app).expose(app)
