@@ -81,10 +81,11 @@ async def run_inference(prompt: str) -> str:
         return r.json()["content"]
 
 
-async def on_request(message: aio_pika.IncomingMessage) -> None:
+async def on_request(message: aio_pika.IncomingMessage, queue_name: str) -> None:
     async with message.process():
         body = json.loads(message.body)
         prompt = body.pop("prompt", "")
+        log("request_received", request_id=body.get("request_id"), queue=queue_name)
         start = time.monotonic()
 
         try:
@@ -122,7 +123,7 @@ async def consume_loop():
         for queue in queues:
             message = await queue.get(fail=False)
             if message is not None:
-                await on_request(message)
+                await on_request(message, queue.name)
                 break
         else:
             await asyncio.sleep(0.5)
