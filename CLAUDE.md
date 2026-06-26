@@ -13,7 +13,7 @@ The broker consumes `REQUEST_QUEUES`, a comma-separated ordered list (per-pool i
 ```json
 {"prompt": "...", "request_id": "...", "chat_id": 123}
 ```
-The broker runs the prompt through `llama-server`'s native `/completion` endpoint, then publishes to the single shared `RESPONSE_QUEUE` (`llm_responses`) with the same `correlation_id`, regardless of which request queue it came from or any `reply_to` the publisher set:
+The broker runs the prompt through `llama-server`'s OpenAI-compatible `/v1/chat/completions` endpoint (so the model's own chat template gets applied, regardless of which `.gguf` is loaded), then publishes to the single shared `RESPONSE_QUEUE` (`llm_responses`) with the same `correlation_id`, regardless of which request queue it came from or any `reply_to` the publisher set:
 ```json
 {"result": "...", "error": null, "request_id": "...", "chat_id": 123, "model_used": "model.gguf", "duration_seconds": 12.3}
 ```

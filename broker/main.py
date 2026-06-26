@@ -67,7 +67,7 @@ def start_llama_server():
         "-m", model_path,
         "--host", "127.0.0.1",
         "--port", LLAMA_PORT,
-    ])
+    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     log("llama_server_started", pid=llama_server_process.pid, model=MODEL_NAME)
 
 
@@ -86,9 +86,11 @@ async def wait_for_llama_server():
 
 async def run_inference(prompt: str) -> str:
     async with httpx.AsyncClient(timeout=None) as client:
-        r = await client.post(f"{LLAMA_URL}/completion", json={"prompt": prompt})
+        r = await client.post(f"{LLAMA_URL}/v1/chat/completions", json={
+            "messages": [{"role": "user", "content": prompt}],
+        })
         r.raise_for_status()
-        return r.json()["content"]
+        return r.json()["choices"][0]["message"]["content"]
 
 
 async def on_request(message: aio_pika.IncomingMessage, queue_name: str) -> None:
