@@ -1,7 +1,7 @@
 image:
   repository: dkrinitsyn/llm-broker
   pullPolicy: Always
-  tag: "20260627162624"
+  tag: "20260627182435"
 
 llamacpp:
   binDir: /opt/ollama-build/latest
