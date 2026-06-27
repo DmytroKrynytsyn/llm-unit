@@ -103,7 +103,7 @@ async def on_request(message: aio_pika.IncomingMessage, queue_name: str) -> None
         prompt = body.pop("prompt", "")
         chunk_num = body.get("chunk_num")
         total_chunk_num = body.get("total_chunk_num")
-        log("request_received", request_id=body.get("request_id"), queue=queue_name, chunk_num=chunk_num, total_chunk_num=total_chunk_num)
+        log("request_received", request_id=body.get("request_id"), queue=queue_name, chunk_num=chunk_num, total_chunk_num=total_chunk_num, body_bytes=len(message.body))
         start = time.monotonic()
 
         try:
@@ -118,13 +118,15 @@ async def on_request(message: aio_pika.IncomingMessage, queue_name: str) -> None
             reply = {**body, "result": None, "error": str(e), "model_used": MODEL_NAME, "duration_seconds": duration}
             log("inference_error", request_id=body.get("request_id"), error=str(e), chunk_num=chunk_num, total_chunk_num=total_chunk_num)
 
+        reply_body = json.dumps(reply).encode()
         await rabbitmq_channel.default_exchange.publish(
             aio_pika.Message(
-                body=json.dumps(reply).encode(),
+                body=reply_body,
                 correlation_id=message.correlation_id,
             ),
             routing_key=RESPONSE_QUEUE,
         )
+        log("response_published", request_id=body.get("request_id"), queue=RESPONSE_QUEUE, body_bytes=len(reply_body))
 
 
 rabbitmq_connection: aio_pika.RobustConnection = None
