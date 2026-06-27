@@ -2,6 +2,7 @@ import os
 import json
 import time
 import glob
+import socket
 import asyncio
 import logging
 import subprocess
@@ -47,8 +48,11 @@ LLAMA_URL = f"http://127.0.0.1:{LLAMA_PORT}"
 MODEL_NAME = None
 
 
+HOSTNAME = socket.gethostname()
+
+
 def log(event: str, **kwargs):
-    print(json.dumps({"event": event, **kwargs}, ensure_ascii=False), flush=True)
+    print(json.dumps({"event": event, "hostname": HOSTNAME, **kwargs}, ensure_ascii=False), flush=True)
 
 
 llama_server_process: subprocess.Popen = None
@@ -97,7 +101,9 @@ async def on_request(message: aio_pika.IncomingMessage, queue_name: str) -> None
     async with message.process():
         body = json.loads(message.body)
         prompt = body.pop("prompt", "")
-        log("request_received", request_id=body.get("request_id"), queue=queue_name)
+        chunk_num = body.get("chunk_num")
+        total_chunk_num = body.get("total_chunk_num")
+        log("request_received", request_id=body.get("request_id"), queue=queue_name, chunk_num=chunk_num, total_chunk_num=total_chunk_num)
         start = time.monotonic()
 
         try:
@@ -105,12 +111,12 @@ async def on_request(message: aio_pika.IncomingMessage, queue_name: str) -> None
             duration = time.monotonic() - start
             llm_request_duration.labels(model=MODEL_NAME).observe(duration)
             reply = {**body, "result": result, "error": None, "model_used": MODEL_NAME, "duration_seconds": duration}
-            log("inference_done", request_id=body.get("request_id"), duration_seconds=duration)
+            log("inference_done", request_id=body.get("request_id"), duration_seconds=duration, chunk_num=chunk_num, total_chunk_num=total_chunk_num)
         except Exception as e:
             duration = time.monotonic() - start
             llm_request_errors.labels(model=MODEL_NAME).inc()
             reply = {**body, "result": None, "error": str(e), "model_used": MODEL_NAME, "duration_seconds": duration}
-            log("inference_error", request_id=body.get("request_id"), error=str(e))
+            log("inference_error", request_id=body.get("request_id"), error=str(e), chunk_num=chunk_num, total_chunk_num=total_chunk_num)
 
         await rabbitmq_channel.default_exchange.publish(
             aio_pika.Message(
