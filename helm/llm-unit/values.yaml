@@ -12,9 +12,11 @@ llamacpp:
 pools:
   - name: ksai
     queues:
+      - llm_requests_external
       - llm_requests_sai
   - name: kmai
     queues:
+      - llm_requests_external
       - llm_requests_mai
       - llm_requests_sai
 
@@ -26,5 +28,7 @@ env:
   LLAMA_BIN_DIR: "/opt/llama-bin"
   LLAMA_MODEL_DIR: "/models"
   LLAMA_PORT: "8080"
+  EXTERNAL_QUEUES: "llm_requests_external"
+  MISTRAL_MODEL: "mistral-small-latest"
 
 namespace:  
