@@ -146,6 +146,18 @@ async def on_request(message: aio_pika.IncomingMessage, queue_name: str) -> None
             llm_tokens_total.labels(model=model_label, source=source, type="output").inc(usage.get("completion_tokens", 0))
             reply = {**body, "result": result, "error": None, "model_used": model_label, "duration_seconds": duration}
             log("inference_done", request_id=body.get("request_id"), duration_seconds=duration, prompt_tokens=usage.get("prompt_tokens"), completion_tokens=usage.get("completion_tokens"), chunk_num=chunk_num, total_chunk_num=total_chunk_num)
+        except httpx.HTTPStatusError as e:
+            duration = time.monotonic() - start
+            llm_request_errors.labels(model=model_label).inc()
+            reply = {**body, "result": None, "error": str(e), "model_used": model_label, "duration_seconds": duration}
+            rate_limit_headers = {
+                k: v for k, v in e.response.headers.items()
+                if "ratelimit" in k.lower() or k.lower() == "retry-after"
+            }
+            log("inference_error", request_id=body.get("request_id"), error=str(e),
+                chunk_num=chunk_num, total_chunk_num=total_chunk_num,
+                status_code=e.response.status_code, response_body=e.response.text[:500],
+                rate_limit_headers=rate_limit_headers)
         except Exception as e:
             duration = time.monotonic() - start
             llm_request_errors.labels(model=model_label).inc()
