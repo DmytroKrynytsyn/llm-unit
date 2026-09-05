@@ -29,6 +29,6 @@ env:
   LLAMA_MODEL_DIR: "/models"
   LLAMA_PORT: "8080"
   EXTERNAL_QUEUES: "llm_requests_external"
-  MISTRAL_MODEL: "mistral-small-latest"
+  MISTRAL_MODEL: "ministral-8b-2512"
 
 namespace:  
